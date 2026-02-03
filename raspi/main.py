@@ -34,7 +34,7 @@ def calculate_severity(depth):
 class PotholeSystem:
     def __init__(self):
         GPIO.setmode(GPIO.BCM)
-        self.lidar = LiDAR(LIDAR_PORT)
+        # self.lidar = LiDAR(LIDAR_PORT) # Commented out LiDAR
         self.ultrasonic = Ultrasonic(ULTRA_TRIG, ULTRA_ECHO)
         self.gps = GPS(GPS_TX_PIN, GPS_RX_PIN)
         self.gsm = GSM(GSM_PORT)
@@ -66,47 +66,40 @@ class PotholeSystem:
             time.sleep(0.05)
 
     def detection_loop(self):
-        """Main detection logic using sensor fusion"""
-        print("Detection loop started.")
+        """Main detection logic using Ultrasonic (LiDAR disabled)"""
+        print("Detection loop started (LiDAR Disabled).")
         while self.running:
-            # 1. Continuous LiDAR scanning
-            distance = self.lidar.get_distance()
+            # 1. Primary scanning now via Ultrasonic
+            depth_val = self.ultrasonic.get_distance()
             
             # If distance increases significantly, it's a potential pothole
-            if distance > POTHOLE_THRESHOLD:
-                print(f"Potential Pothole! LiDAR Depth: {distance}cm")
+            if depth_val > POTHOLE_THRESHOLD:
+                print(f"Pothole Detected! Depth: {depth_val}cm")
                 
-                # 2. Secondary validation with Ultrasonic
-                depth_val = self.ultrasonic.get_distance()
+                # 2. Trigger ESP32-CAM
+                self.camera.trigger()
                 
-                # Check if both agree (within 20% margin)
-                if abs(distance - depth_val) < (distance * 0.2):
-                    print(f"Validated! Final Depth: {depth_val}cm")
-                    
-                    # 3. Trigger ESP32-CAM
-                    self.camera.trigger()
-                    
-                    # 4. Get GPS Coordinates
-                    coords = self.gps.get_location()
-                    
-                    # 5. Calculate Severity
-                    severity = calculate_severity(depth_val)
-                    
-                    # 6. Prepare Data
-                    data = {
-                        "latitude": coords['lat'],
-                        "longitude": coords['lon'],
-                        "depth": depth_val,
-                        "severity": severity,
-                        "timestamp": time.time()
-                    }
-                    
-                    # 7. Send via GSM
-                    self.gsm.send_data(data)
-                    print(f"Data sent: {data}")
-                    
-                    # Debounce
-                    time.sleep(2)
+                # 3. Get GPS Coordinates
+                coords = self.gps.get_location()
+                
+                # 4. Calculate Severity
+                severity = calculate_severity(depth_val)
+                
+                # 5. Prepare Data
+                data = {
+                    "latitude": coords['lat'],
+                    "longitude": coords['lon'],
+                    "depth": depth_val,
+                    "severity": severity,
+                    "timestamp": time.time()
+                }
+                
+                # 6. Send via GSM
+                self.gsm.send_data(data)
+                print(f"Data sent: {data}")
+                
+                # Debounce
+                time.sleep(2)
             
             time.sleep(0.1)
 
