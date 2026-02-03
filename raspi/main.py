@@ -41,11 +41,20 @@ class PotholeSystem:
         self.camera = ESP32Trigger(ESP_TRIGGER_PIN)
         self.motors = MotorController()
         
-        try:
-            self.bluetooth = serial.Serial(BT_PORT, 9600, timeout=1)
-        except:
-            print("Bluetooth not connected or port busy.")
-            self.bluetooth = None
+        # Try to initialize Bluetooth handle multiple potential ports
+        self.bluetooth = None
+        potential_bt_ports = [BT_PORT, "/dev/ttyAMA2", "/dev/rfcomm0", "/dev/ttyS0"]
+        
+        for port in potential_bt_ports:
+            try:
+                self.bluetooth = serial.Serial(port, 9600, timeout=1)
+                print(f"Bluetooth initialized on {port}")
+                break
+            except:
+                continue
+
+        if not self.bluetooth:
+            print("Warning: Bluetooth not connected or ports busy. Manual control disabled.")
 
         self.running = True
 

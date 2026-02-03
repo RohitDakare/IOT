@@ -3,6 +3,8 @@ import RPi.GPIO as GPIO
 import time
 import adafruit_gps # Requires pip install adafruit-circuitpython-gps
 
+GPIO.setwarnings(False)
+
 class LiDAR:
     def __init__(self, port, baud=115200):
         self.ser = serial.Serial(port, baud, timeout=1)
@@ -46,15 +48,34 @@ class Ultrasonic:
 class GPS:
     def __init__(self, tx, rx):
         # Neo-6M is usually 9600 baud
-        # Using Serial because GPIO 12/13 are UART capable on Pi 4
-        self.uart = serial.Serial("/dev/ttyAMA1", baudrate=9600, timeout=10)
-        self.gps = adafruit_gps.GPS(self.uart, debug=False)
+        self.uart = None
+        self.gps = None
+        
+        # List of potential ports for GPS
+        potential_ports = ["/dev/ttyAMA5", "/dev/ttyAMA1", "/dev/ttyS0", "/dev/serial0"]
+        
+        for port in potential_ports:
+            try:
+                self.uart = serial.Serial(port, baudrate=9600, timeout=1)
+                self.gps = adafruit_gps.GPS(self.uart, debug=False)
+                print(f"GPS initialized on {port}")
+                break
+            except Exception as e:
+                continue
+        
+        if not self.gps:
+            print("Warning: GPS could not be initialized. Check wiring and config.txt")
 
     def get_location(self):
-        self.gps.update()
-        if not self.gps.has_fix:
+        if not self.gps:
             return {'lat': 0.0, 'lon': 0.0}
-        return {
-            'lat': self.gps.latitude,
-            'lon': self.gps.longitude
-        }
+        try:
+            self.gps.update()
+            if not self.gps.has_fix:
+                return {'lat': 0.0, 'lon': 0.0}
+            return {
+                'lat': self.gps.latitude,
+                'lon': self.gps.longitude
+            }
+        except:
+            return {'lat': 0.0, 'lon': 0.0}
