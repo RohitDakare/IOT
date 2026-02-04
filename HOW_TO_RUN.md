@@ -1,73 +1,83 @@
-# How to Run the Smart Pothole Detection System
+# 🚀 Comprehensive Guide: Running the Pothole Detection System
 
-This project is divided into 4 main parts. Follow these steps to get everything running:
-
-## 1. Local Backend & Dashboard (Run on your PC)
-This part receives data from the RC car and displays it on the web map.
-1. **Navigate to the backend folder**:
-   ```powershell
-   cd backend
-   ```
-2. **Install Dependencies**:
-   ```powershell
-   pip install fastapi uvicorn mysql-connector-python
-   ```
-3. **Setup Database**:
-   - Open your MySQL terminal.
-   - Run the commands found in `backend/schema.sql`.
-4. **Start the Server**:
-   ```powershell
-   python main.py
-   ```
-5. **View Dashboard**: Open `dashboard/index.html` in your browser.
+This project is a multi-device system including a Backend Server, Web Dashboard, AI Model Training, Raspberry Pi Logic, and ESP32 Vision.
 
 ---
 
-## 2. Raspberry Pi (Run on the RC Car)
-Ensure you are connected to the Raspberry Pi via SSH.
-1. **Move files to the Pi**: (You already seem to be using `scp` for this)
-   ```powershell
-   scp -r raspi admin@192.168.137.17:~/pothole_detection
-   ```
-2. **SSH into the Pi**:
-   ```powershell
-   ssh admin@192.168.137.17
-   ```
-3. **Run Setup**:
-   ```bash
-   cd ~/pothole_detection
-   chmod +x setup_pi.sh
-   ./setup_pi.sh
-   ```
-4. **Start the System**:
-   ```bash
-   python3 main.py
-   ```
+## 💻 1. Backend Server & Dashboard (On your PC)
+The backend is now simplified with **SQLite** (no MySQL installation required).
+
+1.  **Installation**:
+    ```powershell
+    cd backend
+    pip install -r requirements.txt
+    ```
+2.  **Run the Server**:
+    - Just double-click the `backend/run_backend.bat` file, or run:
+    ```powershell
+    python main.py
+    ```
+3.  **Open Dashboard**:
+    - Open your browser and navigate to `http://localhost:8000`.
+4.  **Mock Testing**:
+    - To see the map working without the robot, run:
+    ```powershell
+    python test_api_mock.py
+    ```
 
 ---
 
-## 3. ESP32-CAM (The Camera)
-1. Open `esp32cam/esp32cam.ino` in the **Arduino IDE**.
-2. **Update WiFi**: Change `YOUR_WIFI_SSID` and `YOUR_WIFI_PASSWORD` to your actual details.
-3. **Flash**: Connect your ESP32-CAM and click "Upload".
+## 🧠 2. AI Model Training (In `ml_training/`)
+If you want to train your own custom pothole detection model:
+
+1.  **Preparation**:
+    - Collect images of potholes and annotate them in YOLOv8 format.
+2.  **Training**:
+    ```powershell
+    cd ml_training
+    python train.py
+    ```
+3.  **Optimizing for Edge**:
+    - Convert your model for the Raspberry Pi and ESP32-CAM:
+    ```powershell
+    python export.py
+    ```
 
 ---
 
-## 4. Testing (Bluetooth Control)
-1. Pair your phone/PC with the **HC-05 Bluetooth module**.
-2. Open a Bluetooth Serial Terminal app.
-3. Send these characters to move the car:
-   - `f` (Forward)
-   - `b` (Backward)
-   - `l` (Left)
-   - `r` (Right)
-   - `s` (Stop)
+## 🤖 3. Raspberry Pi (On the Robot)
+The Pi manages the motors, GPS, and sensor fusion.
+
+1.  **Transfer Files**:
+    ```powershell
+    scp -r raspi <pi_user>@<pi_ip>:~/pothole_detection
+    ```
+2.  **Terminal Setup**:
+    - SSH into your Pi and run:
+    ```bash
+    cd ~/pothole_detection
+    chmod +x setup_pi.sh
+    ./setup_pi.sh
+    python3 main.py
+    ```
+3.  **Communication**:
+    - Ensure `raspi/communication.py` has the correct `URL` pointing to your PC's IP address.
 
 ---
 
-### Troubleshooting the "requirements.txt" error:
-The reason your command failed is that you were in the root folder, but the file is inside the `raspi` folder. On your PC, you should run:
-```powershell
-pip install -r raspi/requirements.txt
-```
-*(Note: RPi.GPIO will only work on the Raspberry Pi hardware, not on Windows)*.
+## 📷 4. ESP32-CAM (Vision Sensor)
+The camera captures photos when triggered by the Pi or AI.
+
+1.  **Arduino IDE**:
+    - Open `esp32cam/esp32cam.ino`.
+    - Update your **WiFi SSID/Password**.
+    - Update `serverUrl` to your PC's IP address.
+2.  **Flash**: Connect the ESP32-CAM via an FTDI adapter and upload.
+
+---
+
+## 🎮 5. Operation & Control
+1.  **Connect Bluetooth**: Pair your phone/PC with the **HC-05** module.
+2.  **Manual Control**: Use a serial terminal to send movement commands:
+    - `f`: Forward | `b`: Backward | `l`: Left | `r`: Right | `s`: Stop
+3.  **Detection**: When a pothole is detected (depth > 5cm), the ESP32-CAM will flash, and data will appear on your dashboard instantly.
