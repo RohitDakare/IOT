@@ -3,65 +3,40 @@ import serial
 import RPi.GPIO as GPIO
 import threading
 from sensors import LiDAR, Ultrasonic, GPS
-from communication import GSM, BluetoothSoft
+from communication import GSM
 from camera_trigger import ESP32Trigger
 from motors import MotorController
 
 # Configuration
-POTHOLE_THRESHOLD = 5.0
+POTHOLE_THRESHOLD = 5.0 # cm
 SEVERITY_LEVELS = {"Minor": (1, 3), "Moderate": (3, 7), "Critical": (7, 100)}
-
-# Pin Definitions aligned with User Request
-# -----------------------------------------
-# LiDAR: UART0 (GPIO 14/15)
-# GPS: UART5 (GPIO 12/13) -> /dev/ttyAMA5
-# GSM: UART2 (GPIO 0/1) -> /dev/ttyAMA1
-# Motors: IN 5,6,17,26. ENA/ENB moved to 20/21 (Code override) due to conflict with GPS.
-# ESP32 Trigger: GPIO 11
-# Ultrasonic: TRIG=23, ECHO=24 (Assumed, as not specified in wiring text but standard)
-
-def calculate_severity(depth):
-    for level, (low, high) in SEVERITY_LEVELS.items():
-        if low <= depth < high: return level
-    return "Unknown"
+ESTIMATED_SPEED_CM_S = 30.0 # avg speed of toy car
 
 class PotholeSystem:
     def __init__(self):
         GPIO.setmode(GPIO.BCM)
         
         # Initialize Sensors
-        # self.lidar = LiDAR() # UART0 default
         self.ultrasonic = Ultrasonic(23, 24)
-        self.gps = GPS() # Auto-detects on UART5
-        self.gsm = GSM("/dev/ttyAMA1") # UART2
-        self.camera = ESP32Trigger(11) # GPIO 11
-        
-        # Motors
-        # WARNING: User asked for ENA/ENB on 12/13. This conflicts with GPS.
-        # Code uses 20/21. PLEASE REWIRE ENA->20, ENB->21.
+        self.gps = GPS() 
+        self.gsm = GSM("/dev/ttyAMA1")
+        self.camera = ESP32Trigger(11)
         self.motors = MotorController() 
         
         self.bluetooth = None
-        # Try finding hardware BT first (e.g., if rewired to UART3 GPIO 4/5)
-        potential_bt_ports = ["/dev/ttyAMA2", "/dev/ttyAMA3", "/dev/rfcomm0"]
-        for port in potential_bt_ports:
+        self.running = True
+        
+        # BT Init
+        for port in ["/dev/ttyAMA2", "/dev/ttyAMA3", "/dev/rfcomm0"]:
             try:
                 self.bluetooth = serial.Serial(port, 9600, timeout=1)
                 print(f"Bluetooth connected on {port}")
                 break
             except:
                 continue
-        
-        if not self.bluetooth:
-             # Fallback to the SoftUART class for 27/22 if needed (Non-functional placeholder)
-             # print("Bluetooth hardware UART not found. Checking GPIO 27/22...")
-             pass
-
-        self.running = True
 
     def bluetooth_control(self):
         if not self.bluetooth: return
-        print("Bluetooth control started.")
         while self.running:
             try:
                 if self.bluetooth.in_waiting > 0:
@@ -76,37 +51,81 @@ class PotholeSystem:
                 break
 
     def detection_loop(self):
-        print("Detection loop started.")
+        print("Detection loop started...")
+        in_pothole = False
+        start_time = 0
+        max_depth = 0
+        
         while self.running:
-            depth_val = self.ultrasonic.get_distance()
+            current_depth = self.ultrasonic.get_distance()
             
-            if depth_val > POTHOLE_THRESHOLD:
-                print(f"Pothole Detected! Depth: {depth_val:.2f}cm")
-                self.camera.trigger()
-                coords = self.gps.get_location()
-                severity = calculate_severity(depth_val)
+            # Filter noise
+            if current_depth > 200 or current_depth < 0: 
+                time.sleep(0.05)
+                continue
+
+            if not in_pothole:
+                if current_depth > POTHOLE_THRESHOLD:
+                    # --- START OF POTHOLE ---
+                    in_pothole = True
+                    start_time = time.time()
+                    max_depth = current_depth
+                    print(f"Pothole Start! Initial Depth: {current_depth:.1f}cm")
+                    
+                    # 1. Trigger Camera Immediately to capture the hole
+                    self.camera.trigger()
+                    
+            else:
+                # We are IN a pothole
+                if current_depth > max_depth:
+                    max_depth = current_depth
                 
-                data = {
-                    "latitude": coords['lat'],
-                    "longitude": coords['lon'],
-                    "depth": float(f"{depth_val:.2f}"),
-                    "severity": severity,
-                    "timestamp": time.time()
-                }
-                
-                if coords['fixed']:
-                     print(f"Location: {coords['lat']}, {coords['lon']}")
-                
-                self.gsm.send_data(data)
-                time.sleep(2)
-            
-            time.sleep(0.1)
+                # Check if we are out of the pothole (depth returns to normal)
+                if current_depth < POTHOLE_THRESHOLD:
+                    # --- END OF POTHOLE ---
+                    in_pothole = False
+                    duration = time.time() - start_time
+                    
+                    # Calculate Dimensions
+                    length = duration * ESTIMATED_SPEED_CM_S
+                    width = 0.0 # Requires image processing, placeholder
+                    
+                    print(f"Pothole End. Max Depth: {max_depth:.1f}cm, Length: {length:.1f}cm")
+                    
+                    # Get Location
+                    coords = self.gps.get_location()
+                    severity = self.calculate_severity(max_depth)
+                    
+                    # Prepare Payload including Dimensions
+                    data = {
+                        "latitude": coords['lat'],
+                        "longitude": coords['lon'],
+                        "depth": float(f"{max_depth:.2f}"),
+                        "length": float(f"{length:.2f}"),
+                        "width": 0.0, # Placeholder
+                        "severity": severity,
+                        "timestamp": time.time()
+                    }
+                    
+                    if coords['fixed']:
+                        print(f"  > Location: {coords['lat']:.5f}, {coords['lon']:.5f}")
+                    else:
+                        print("  > Warning: No GPS Fix (Outdoor view needed)")
+                        
+                    self.gsm.send_data(data)
+                    time.sleep(1) # Debounce next hole
+
+            time.sleep(0.05) # Sampling rate (20Hz)
+
+    def calculate_severity(self, depth):
+        for level, (low, high) in SEVERITY_LEVELS.items():
+            if low <= depth < high: return level
+        return "Critical"
 
     def run(self):
         bt_thread = threading.Thread(target=self.bluetooth_control)
         bt_thread.daemon = True
         bt_thread.start()
-        
         try:
             self.detection_loop()
         except KeyboardInterrupt:
@@ -119,5 +138,5 @@ class PotholeSystem:
             GPIO.cleanup()
 
 if __name__ == "__main__":
-    system = PotholeSystem()
-    system.run()
+    sys = PotholeSystem()
+    sys.run()
