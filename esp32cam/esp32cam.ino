@@ -2,11 +2,12 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 
-// --- WiFi Credentials ---
+// --- WiFi Configuration ---
 const char* ssid = "YOUR_WIFI_SSID";
 const char* password = "YOUR_WIFI_PASSWORD";
+const char* serverUrl = "http://195.35.23.26/api/upload_image";
 
-// --- Pin Definitions for AI-THINKER ESP32-CAM ---
+// --- Pin Definitions (AI-THINKER ESP32-CAM) ---
 #define PWDN_GPIO_NUM     32
 #define RESET_GPIO_NUM    -1
 #define XCLK_GPIO_NUM      0
@@ -24,21 +25,19 @@ const char* password = "YOUR_WIFI_PASSWORD";
 #define HREF_GPIO_NUM     23
 #define PCLK_GPIO_NUM     22
 
-const int triggerPin = 12; // Triggered by RasPi GPIO 27
-const char* serverUrl = "http://195.35.23.26/api/upload_image";
-
 void setup() {
   Serial.begin(115200);
-  pinMode(triggerPin, INPUT);
-
+  
   // WiFi Setup
   WiFi.begin(ssid, password);
+  Serial.print("Connecting to WiFi");
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
   Serial.println("\nWiFi connected");
 
+  // Camera Config
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
@@ -71,49 +70,35 @@ void setup() {
     config.fb_count = 1;
   }
 
-  // Init Camera
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
-    Serial.printf("Camera init failed with error 0x%x", err);
-    return;
+    Serial.printf("Camera init failed: 0x%x", err);
   }
 }
 
 void captureAndUpload() {
-  camera_fb_t * fb = NULL;
-  fb = esp_camera_fb_get();
-  if(!fb) {
-    Serial.println("Camera capture failed");
-    return;
-  }
-  
-  Serial.println("Image Captured! Size: " + String(fb->len));
+  camera_fb_t * fb = esp_camera_fb_get();
+  if(!fb) return;
   
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
     http.begin(serverUrl);
     http.addHeader("Content-Type", "image/jpeg");
-    
-    int httpResponseCode = http.POST(fb->buf, fb->len);
-    
-    if (httpResponseCode > 0) {
-      Serial.printf("Image uploaded successfully, response code: %d\n", httpResponseCode);
-    } else {
-      Serial.printf("Image upload failed, error: %s\n", http.errorToString(httpResponseCode).c_str());
-    }
+    int code = http.POST(fb->buf, fb->len);
+    if(code > 0) Serial.printf("Upload Status: %d\n", code);
     http.end();
-  } else {
-    Serial.println("WiFi Disconnected");
   }
-  
   esp_camera_fb_return(fb);
 }
 
 void loop() {
-  if (digitalRead(triggerPin) == HIGH) {
-    Serial.println("Trigger Received from Raspberry Pi!");
-    captureAndUpload();
-    delay(2000); // Prevent multiple captures
+  // Listen for Serial Command from Raspberry Pi (USB connection)
+  if (Serial.available()) {
+    char cmd = Serial.read();
+    if (cmd == 'c' || cmd == 'C') {
+        Serial.println("Taking Picture...");
+        captureAndUpload();
+    }
   }
-  delay(10);
+  delay(50);
 }
