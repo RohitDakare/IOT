@@ -2,7 +2,9 @@ import RPi.GPIO as GPIO
 import time
 
 class MotorController:
-    def __init__(self, in1=5, in2=6, in3=19, in4=26, ena=13, enb=12):
+    def __init__(self, in1=5, in2=6, in3=17, in4=26, ena=20, enb=21):
+        # NOTE: User requested ENA/ENB on 12/13, but those are used by GPS (UART5).
+        # We MUST move them to collision-free pins. Using 20/21.
         self.in1 = in1
         self.in2 = in2
         self.in3 = in3
