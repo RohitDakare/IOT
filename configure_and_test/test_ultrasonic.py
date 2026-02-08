@@ -2,8 +2,8 @@ import RPi.GPIO as GPIO
 import time
 
 # Configuration (BCM Pins)
-TRIG = 23
-ECHO = 24
+TRIG = 17
+ECHO = 18
 
 def get_distance():
     GPIO.output(TRIG, True)

@@ -15,6 +15,9 @@ except ImportError:
 def test_lidar():
     if LiDAR is None: return
 
+    # Ensure GPIO mode is set for SoftwareSerial
+    GPIO.setmode(GPIO.BCM)
+
     print("=== Testing LiDAR (TF02-Pro) ===")
     print("Configuration: Using Software Serial (Bit-Banging) due to custom wiring.")
     print("TX Pin (Pi): GPIO 6 (Physical 31) -> Connected to LiDAR RX (Yellow)")
