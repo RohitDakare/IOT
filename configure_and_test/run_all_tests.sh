@@ -45,6 +45,10 @@ PID=$!
 sleep 5
 kill $PID 2>/dev/null
 echo ""
+# 7. LiDAR Test (TF02-Pro)
+echo "7. Testing TF02-Pro LiDAR (Software Serial)..."
+python3 test_lidar.py
+echo ""
 echo "----------------------------------------------------------"
 echo "✅ ALL DIAGNOSTICS COMPLETED"
 echo "Check the outputs above for any 'FAILED' or 'Error' messages."
