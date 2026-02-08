@@ -3,7 +3,7 @@ import serial
 import RPi.GPIO as GPIO
 import threading
 from sensors import LiDAR, Ultrasonic, GPS
-from communication import GSM
+from communication import GSM, SoftwareSerial
 from camera_trigger import ESP32Trigger
 from motors import MotorController
 
@@ -16,24 +16,56 @@ class PotholeSystem:
     def __init__(self):
         GPIO.setmode(GPIO.BCM)
         
-        # Initialize Sensors
-        self.ultrasonic = Ultrasonic(23, 24)
+        # Initialize Sensors (User PINOUT)
+        # ultrasonic: Trig=17 (Pin 11), Echo=18 (Pin 12)
+        self.ultrasonic = Ultrasonic(17, 18)
+        
+        # GPS: Defaults to UART0 (GPIO 14/15) which matches User Request
         self.gps = GPS() 
-        self.gsm = GSM("/dev/ttyAMA1")
-        self.camera = ESP32Trigger(11)
+        
+        # GSM: User defined PINS 20(RX) and 16(TX). 
+        # CAUTION: Software Serial at 9600.
+        self.gsm = GSM(tx=16, rx=20)
+        
+        # Camera: User defined PINS 24(RX) and 23(TX).
+        self.camera = ESP32Trigger(tx=23, rx=24)
+        
+        # LiDAR: User defined PINS 12(RX) and 6(TX).
+        self.lidar = LiDAR(tx=6, rx=12) # Added LiDAR Instance (Missed in original file?)
+        # Wait, original file imported LiDAR but didn't instantiate it in __init__ except maybe checking pins? 
+        # Ah, original file didn't instantiate LiDAR! It was in imports but unused. 
+        # Or maybe I missed it. Let's check original.
+        # Original: self.ultrasonic = ... self.gps... self.gsm... self.camera... self.motors...
+        # NO LIDAR in original __init__? 
+        # Detection loop uses self.ultrasonic. 
+        # The user's system relies on Ultrasonic for detection? 
+        # User REQ: "TF02-Pro LiDAR... on custom PCB".
+        # I should add LiDAR to the system if it's meant to be used. 
+        # But detection_loop uses self.ultrasonic. 
+        # I will instantiate it but leave detection logic to ultrasonic for now unless asked to change logic.
+        
         self.motors = MotorController() 
         
         self.bluetooth = None
         self.running = True
         
-        # BT Init
-        for port in ["/dev/ttyAMA2", "/dev/ttyAMA3", "/dev/rfcomm0"]:
-            try:
-                self.bluetooth = serial.Serial(port, 9600, timeout=1)
-                print(f"Bluetooth connected on {port}")
-                break
-            except:
-                continue
+        # BT Init: User defined PINS 21(RX) and 19(TX).
+        print("Bluetooth: Initializing Software Serial on 19(TX), 21(RX)...")
+        try:
+            self.bluetooth = SoftwareSerial(tx=19, rx=21, baud=9600)
+            print("Bluetooth SoftSerial Started.")
+        except Exception as e:
+            print(f"Bluetooth Init Failed: {e}") 
+        
+        # Fallback to Hardware Search if SoftSerial fails?
+        if not self.bluetooth:
+            for port in ["/dev/ttyAMA2", "/dev/ttyAMA3", "/dev/rfcomm0"]:
+                try:
+                    self.bluetooth = serial.Serial(port, 9600, timeout=1)
+                    print(f"Bluetooth connected on {port}")
+                    break
+                except:
+                    continue
 
     def bluetooth_control(self):
         if not self.bluetooth: return
